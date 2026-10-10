@@ -13,6 +13,10 @@ or any other paid AI model is involved or required.
 > *target*, not a guarantee. The system is designed to say
 > **"No qualifying trades found. Waiting for better conditions."** whenever the evidence is not there.
 
+Screenshots of every page are in [`docs/screenshots/`](docs/screenshots/).
+
+![Best Opportunities page](docs/screenshots/04_opportunities.png)
+
 ---
 
 ## 1. Quick start (3 commands)
