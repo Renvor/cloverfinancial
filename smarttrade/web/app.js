@@ -24,6 +24,8 @@
   function modal(html) { $("#modal-body").innerHTML = html; $("#modal").classList.remove("hidden"); }
   $("#modal-close").onclick = () => $("#modal").classList.add("hidden");
   $("#modal").addEventListener("click", (e) => { if (e.target.id === "modal") $("#modal").classList.add("hidden"); });
+  // Two-click confirmation (dialogs such as confirm() are unavailable in some hosts).
+  const armed = (b, label = "Click again to confirm") => { if (b.dataset.armed) { delete b.dataset.armed; return true; } b.dataset.armed = "1"; const old = b.textContent; b.textContent = label; setTimeout(() => { delete b.dataset.armed; b.textContent = old; }, 4000); return false; };
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const money = (v, d = 2) => (v === null || v === undefined || isNaN(v)) ? "–" : (v < 0 ? "-" : "") + "$" + Math.abs(v).toFixed(d);
   const pct = (v, d = 1) => (v === null || v === undefined || isNaN(v)) ? "–" : (v * 100).toFixed(d) + "%";
@@ -128,14 +130,19 @@
     } catch (e) { /* ignore */ }
   }
   const PAGES = {};
-  async function go(page) {
+  // Navigation runs one page at a time (a fast second click waits for the first render to finish).
+  let goChain = Promise.resolve();
+  let programmaticHash = null;
+  function go(page) { goChain = goChain.then(() => renderPage(page)); return goChain; }
+  async function renderPage(page) {
     state.page = page;
+    programmaticHash = page;
+    if (location.hash.slice(1) !== page) location.hash = page;
     document.querySelectorAll("#nav a").forEach((a) => a.classList.toggle("active", a.dataset.page === page));
     $("#page-title").textContent = $(`#nav a[data-page="${page}"]`).textContent;
     content.innerHTML = `<div class="empty">Loading…</div>`;
     try { await loadShared(); await PAGES[page](); } catch (e) { content.innerHTML = `<div class="notice bad">${esc(e.message)}</div>`; }
     renderChips();
-    location.hash = page;
   }
   document.querySelectorAll("#nav a").forEach((a) => (a.onclick = () => go(a.dataset.page)));
   $("#glossary-btn").onclick = () => modal(`<h2>Glossary</h2>${Object.entries(state.glossary).map(([k, v]) => `<p><b>${esc(k)}</b><br><span class="muted">${esc(v)}</span></p>`).join("")}`);
@@ -494,7 +501,7 @@
       }));
       card.querySelectorAll("[data-close]").forEach((b) => (b.onclick = async () => { try { await api(`/api/paper/accounts/${id}/positions/${b.dataset.close}/close`, { method: "POST" }); toast("Simulated position closed.", "ok"); go("paper"); } catch (e) { toast(e.message, "bad"); } }));
       card.querySelectorAll("[data-resume]").forEach((b) => (b.onclick = async () => { try { await api(`/api/paper/accounts/${id}/resume`, { method: "POST" }); go("paper"); } catch (e) { toast(e.message, "bad"); } }));
-      card.querySelectorAll("[data-del]").forEach((b) => (b.onclick = async () => { if (!confirm("Delete this paper account and its simulated history?")) return; await api(`/api/paper/accounts/${id}`, { method: "DELETE" }); go("paper"); }));
+      card.querySelectorAll("[data-del]").forEach((b) => (b.onclick = async () => { if (!armed(b, "Delete account?")) return; await api(`/api/paper/accounts/${id}`, { method: "DELETE" }); go("paper"); }));
       card.querySelectorAll("[data-hist]").forEach((b) => (b.onclick = async () => {
         const d = await api(`/api/paper/accounts/${id}`);
         $(`#hist-${id}`).innerHTML = d.closed_positions.length ? `<table><thead><tr><th>Symbol</th><th>Strategy</th><th>Entry</th><th>Exit</th><th class="num">Qty</th><th class="num">Entry px</th><th class="num">Exit px</th><th class="num">P&L</th><th>Reason</th><th>Data</th></tr></thead><tbody>${d.closed_positions.map((p) => `<tr><td>${esc(p.symbol)}</td><td>${esc(p.strategy)}</td><td>${date(p.entry_ts)}</td><td>${date(p.exit_ts)}</td><td class="num">${p.quantity}</td><td class="num">${num(p.entry_price, 4)}</td><td class="num">${num(p.exit_price, 4)}</td><td class="num">${signed(p.realized_pnl)}</td><td>${esc(p.exit_reason)}</td><td>${statusPill(p.data_status)}</td></tr>`).join("")}</tbody></table>` : `<div class="muted">No closed trades yet.</div>`;
@@ -582,7 +589,7 @@
       try { const r = await api("/api/datasets/fetch", { method: "POST", body: { provider: key, symbol, asset_class: $(`[data-fetch-class="${key}"]`).value } }); out.innerHTML = `<div class="notice ok">${esc(r.dataset.symbol)}: ${r.dataset.bar_count} bars, status ${r.dataset.status}, last bar ${date(r.dataset.last_ts)}.</div>`; loadShared(); }
       catch (e) { out.innerHTML = `<div class="notice bad">${esc(e.message)}<br><span class="muted">The app keeps working with bundled and imported data.</span></div>`; }
     }));
-    content.querySelectorAll("[data-del-ds]").forEach((b) => (b.onclick = async () => { if (!confirm("Delete this dataset?")) return; await api(`/api/datasets/${b.dataset.delDs}`, { method: "DELETE" }); go("data"); }));
+    content.querySelectorAll("[data-del-ds]").forEach((b) => (b.onclick = async () => { if (!armed(b, "Delete?")) return; await api(`/api/datasets/${b.dataset.delDs}`, { method: "DELETE" }); go("data"); }));
     content.querySelectorAll("[data-bench]").forEach((b) => (b.onclick = async () => { await api("/api/datasets/benchmark", { method: "POST", body: { dataset_id: Number(b.dataset.bench) } }); toast("Benchmark set. It is used for the broad-market regime filter.", "ok"); }));
   };
 
@@ -601,5 +608,5 @@
   // ---------------------------------------------------------------- boot
   const initial = (location.hash || "#dashboard").slice(1);
   go(PAGES[initial] ? initial : "dashboard");
-  window.addEventListener("hashchange", () => { const p = location.hash.slice(1); if (PAGES[p] && p !== state.page) go(p); });
+  window.addEventListener("hashchange", () => { const p = location.hash.slice(1); if (p === programmaticHash) { programmaticHash = null; return; } if (PAGES[p] && p !== state.page) go(p); });
 })();
