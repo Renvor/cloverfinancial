@@ -1,0 +1,18 @@
+# Runtime data (database, imports, logs) - never commit
+data/
+*.db
+*.db-journal
+*.log
+
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
